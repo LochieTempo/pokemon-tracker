@@ -598,6 +598,63 @@ function deleteItem(id) {
   toast('Removed');
 }
 
+function duplicateItem(id) {
+  const src = items.find(i => i.id === id);
+  if (!src) return;
+  document.getElementById('f-edit-id').value = '';
+  document.getElementById('f-name').value = src.name;
+  document.getElementById('f-set').value = src.set || '';
+  document.getElementById('f-date').value = src.date;
+  document.getElementById('f-type').value = src.type;
+  document.getElementById('f-status').value = src.status;
+  document.getElementById('f-price').value = src.price;
+  document.getElementById('f-qty').value = src.qty;
+  document.getElementById('f-source').value = src.source || '';
+  document.getElementById('f-grade').value = src.grade || '';
+  document.getElementById('f-notes').value = '';
+  const searchEl = document.getElementById('f-search');
+  searchEl.value = src.searchTerm || '';
+  searchEl._manuallyEdited = true;
+  document.getElementById('form-title').textContent = 'Add item (from template)';
+  document.getElementById('save-btn').textContent = 'Add to collection';
+  switchTab('add', document.querySelector('.nav-btn:nth-child(3)'));
+  document.querySelector('.main').scrollTop = 0;
+  toast('Template loaded — change what\'s different then save');
+}
+
+function splitOpen(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const input = prompt(`You have ${item.qty} sealed "${item.name}".\nHow many do you want to open?`);
+  if (input === null) return;
+  const openCount = parseInt(input);
+  if (isNaN(openCount) || openCount <= 0) { toast('⚠️ Enter a valid number'); return; }
+  if (openCount >= item.qty) {
+    if (!confirm(`That's all ${item.qty} — mark the whole entry as opened?`)) return;
+    item.status = 'ripped';
+    save();
+    renderCollection();
+    toast('All marked as opened');
+    setTimeout(() => openRipModal(id), 400);
+    return;
+  }
+  // Split: reduce sealed qty, create new opened entry
+  item.qty -= openCount;
+  const openedEntry = {
+    ...item,
+    id: Date.now().toString(),
+    qty: openCount,
+    status: 'ripped',
+    currentValue: null,
+    lastPriceFetch: null
+  };
+  items.unshift(openedEntry);
+  save();
+  renderCollection();
+  toast(`Split: ${item.qty} sealed + ${openCount} opened`);
+  setTimeout(() => openRipModal(openedEntry.id), 400);
+}
+
 function markOpened(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
@@ -746,7 +803,9 @@ function renderCollection() {
       ? `<span class="item-gl" style="background:${gl>=0?'var(--green-dim)':'var(--red-dim)'};color:${gl>=0?'var(--green)':'var(--red)'}">${gl>=0?'+':''}${aud(gl)}</span>`
       : `<span style="font-size:11px;color:var(--text3)">no price yet</span>`;
     const openedBtn = i.status === 'sealed'
-      ? `<button onclick="markOpened('${i.id}')" style="font-size:10px;color:var(--text3);background:none;border:0.5px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-top:4px">Mark opened</button>`
+      ? (i.qty > 1
+          ? `<button onclick="splitOpen('${i.id}')" style="font-size:10px;color:var(--teal);background:none;border:0.5px solid var(--teal);border-radius:4px;padding:3px 6px;cursor:pointer;margin-top:4px">Split & open some</button>`
+          : `<button onclick="markOpened('${i.id}')" style="font-size:10px;color:var(--text3);background:none;border:0.5px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-top:4px">Mark opened</button>`)
       : '';
     const priceStatus = i.searchTerm
       ? (i.lastPriceFetch ? `<span style="font-size:10px;color:var(--text3)">Fetched ${i.lastPriceFetch}</span>` : `<span style="font-size:10px;color:var(--amber)">Not yet fetched</span>`)
@@ -768,6 +827,9 @@ function renderCollection() {
       <div class="item-actions">
         <button class="btn-edit-sm" onclick="openEditModal('${i.id}')" aria-label="Edit item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="btn-edit-sm" onclick="duplicateItem('${i.id}')" aria-label="Duplicate item" title="Duplicate as template">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
         <button class="btn-danger-sm" onclick="deleteItem('${i.id}')" aria-label="Delete item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
