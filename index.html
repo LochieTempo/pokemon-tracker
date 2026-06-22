@@ -439,7 +439,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 <div id="toast"></div>
 
 <script>
-const STORAGE_KEY = 'pokevault_v1';
+const STORAGE_KEY = 'pokevault_v1'; // legacy — kept for migration only
 let items = [];
 let currentFilter = 'all';
 let pricesFetching = false;
@@ -451,8 +451,84 @@ function updateBadge() {
   else { badge.style.display = 'none'; }
 }
 
-function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch(e) {} }
-function load() { try { const d = localStorage.getItem(STORAGE_KEY); if (d) items = JSON.parse(d); } catch(e) { items = []; } }
+// IndexedDB storage — persists through app close/swipe on iOS home screen web apps
+const DB_NAME = 'pokevault';
+const DB_VERSION = 1;
+const STORE_NAME = 'items';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (db) { resolve(db); return; }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains(STORE_NAME)) {
+        d.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+      // Legacy meta store for non-array data
+      if (!d.objectStoreNames.contains('meta')) {
+        d.createObjectStore('meta');
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e);
+  });
+}
+
+async function save() {
+  try {
+    const d = await openDB();
+    const tx = d.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    // Clear then write all items (simplest reliable approach)
+    store.clear();
+    items.forEach(item => store.put(item));
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(e) {
+    // Fallback to localStorage if IndexedDB fails
+    try { localStorage.setItem('pokevault_fallback', JSON.stringify(items)); } catch(_) {}
+  }
+}
+
+async function load() {
+  try {
+    const d = await openDB();
+    const tx = d.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    return new Promise((resolve) => {
+      req.onsuccess = () => {
+        let loaded = req.result || [];
+        // Sort by id descending (most recent first) since IndexedDB returns unordered
+        loaded.sort((a, b) => b.id.localeCompare(a.id));
+        items = loaded;
+        // If IndexedDB is empty, try migrating from localStorage
+        if (items.length === 0) {
+          try {
+            const legacy = localStorage.getItem('pokevault_v1') || localStorage.getItem('pokevault_fallback');
+            if (legacy) {
+              items = JSON.parse(legacy);
+              // Migrate to IndexedDB
+              save();
+              localStorage.removeItem('pokevault_v1');
+              localStorage.removeItem('pokevault_fallback');
+              toast('📦 Migrated your data to persistent storage');
+            }
+          } catch(_) {}
+        }
+        resolve();
+      };
+      req.onerror = () => {
+        // Fallback
+        try { const d = localStorage.getItem('pokevault_v1'); if (d) items = JSON.parse(d); } catch(_) {}
+        resolve();
+      };
+    });
+  } catch(e) {
+    try { const d = localStorage.getItem('pokevault_v1'); if (d) items = JSON.parse(d); } catch(_) {}
+  }
+}
 
 function aud(n) {
   const v = parseFloat(n || 0);
@@ -1082,7 +1158,7 @@ function parseCSVRow(row) {
   return result;
 }
 
-function confirmImport(mode) {
+async function confirmImport(mode) {
   if (mode === 'replace') {
     if (!confirm('This will REPLACE your entire collection with the CSV data. Are you sure?')) return;
     items = pendingImportItems;
@@ -1104,9 +1180,10 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Mark search term as manually edited if user types in it
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('f-search').addEventListener('input', function() { this._manuallyEdited = true; });
   cancelEdit();
+  await load();
   renderDashboard();
 });
 </script>
