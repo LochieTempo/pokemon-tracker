@@ -221,8 +221,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="stat"><div class="stat-label">Items owned</div><div class="stat-value" id="d-count">0</div><div class="stat-sub">across <span id="d-types">0</span> types</div></div>
       </div>
       <div class="card">
+        <div class="card-title">Spend breakdown</div>
+        <div id="dash-donut"></div>
+      </div>
+      <div class="card">
         <div class="card-title">Sealed vs opened</div>
         <div id="dash-bars"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🏆 Best performers</div>
+        <div id="dash-best"></div>
       </div>
       <div class="card">
         <div class="card-title">Recent purchases</div>
@@ -248,12 +256,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="card-title" id="form-title">Add item</div>
         <div class="field">
           <label>Item name *</label>
-          <input type="text" id="f-name" placeholder="e.g. Surging Sparks Booster Box" autocomplete="off" oninput="autoSearchTerm()">
+          <input type="text" id="f-name" placeholder="e.g. Surging Sparks Booster Box" autocomplete="off" autocapitalize="words" oninput="autoSearchTerm()">
         </div>
         <div class="field-row">
           <div class="field">
             <label>Set / series</label>
-            <input type="text" id="f-set" placeholder="e.g. Prismatic Evolutions">
+            <input type="text" id="f-set" placeholder="e.g. Prismatic Evolutions" autocapitalize="words">
           </div>
           <div class="field">
             <label>Date purchased *</label>
@@ -264,14 +272,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
           <div class="field">
             <label>Item type *</label>
             <select id="f-type" onchange="autoStatus()">
-              <option value="sealed-box">Booster box</option>
-              <option value="sealed-etb">ETB</option>
-              <option value="sealed-pack">Booster pack(s)</option>
-              <option value="sealed-promo">Promo / special set</option>
-              <option value="sealed-other">Other sealed</option>
-              <option value="single">Single card</option>
-              <option value="graded">Graded card</option>
-              <option value="ripped">Opened product</option>
+              <option value="sealed-box">Booster Box</option>
+              <option value="sealed-etb">Elite Trainer Box (ETB)</option>
+              <option value="sealed-bundle">Booster Bundle</option>
+              <option value="sealed-pack">Booster/Blister Pack(s)</option>
+              <option value="sealed-promo">Promo / Special Set</option>
+              <option value="sealed-other">Other Sealed</option>
+              <option value="single">Single Card</option>
+              <option value="graded">Graded Card</option>
             </select>
           </div>
           <div class="field">
@@ -297,11 +305,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div class="field-row">
           <div class="field">
             <label>Where purchased</label>
-            <input type="text" id="f-source" placeholder="e.g. eBay, Costco, LGS">
+            <input type="text" id="f-source" placeholder="e.g. eBay, Costco, LGS" autocapitalize="words">
           </div>
           <div class="field">
             <label>Grade / condition</label>
-            <input type="text" id="f-grade" placeholder="e.g. PSA 10, NM, Sealed">
+            <input type="text" id="f-grade" placeholder="e.g. PSA 10, NM, Sealed" autocapitalize="words">
           </div>
         </div>
       </div>
@@ -543,10 +551,35 @@ function toast(msg) {
   setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-const ITEM_ICONS = {'sealed-box':'📦','sealed-etb':'🎁','sealed-pack':'✨','sealed-promo':'🌟','sealed-other':'🔒','single':'🃏','graded':'🏆','ripped':'🎴'};
+const TYPE_BADGE = {
+  'sealed-box':  {label:'BOX', color:'var(--teal)'},
+  'sealed-etb':  {label:'ETB', color:'var(--accent2)'},
+  'sealed-bundle':{label:'BDL', color:'var(--accent)'},
+  'sealed-pack': {label:'PCK', color:'var(--blue)'},
+  'sealed-promo':{label:'PRO', color:'#c084fc'},
+  'sealed-other':{label:'SLD', color:'var(--teal)'},
+  'single':      {label:'SGL', color:'var(--amber)'},
+  'graded':      {label:'PSA', color:'#f59e0b'},
+  'ripped':      {label:'RIP', color:'var(--red)'}
+};
 const STATUS_LABELS = {sealed:'Sealed',ripped:'Opened',single:'Single',graded:'Graded'};
 
+function typeBadge(type) {
+  const b = TYPE_BADGE[type] || {label:'???', color:'var(--text3)'};
+  return `<div style="width:40px;height:40px;border-radius:10px;background:${b.color}22;border:1px solid ${b.color}44;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:800;color:${b.color};letter-spacing:0.5px">${b.label}</div>`;
+}
+
 function statusTag(s) { return `<span class="tag tag-${s}">${STATUS_LABELS[s]||s}</span>`; }
+
+function fmtDate(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const day = date.getDate();
+  const suffix = day === 1||day===21||day===31 ? 'st' : day===2||day===22 ? 'nd' : day===3||day===23 ? 'rd' : 'th';
+  const month = date.toLocaleString('en-AU', {month:'long'});
+  return `${day}${suffix} ${month}, ${y}`;
+}
 
 function switchTab(id, btn) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -567,7 +600,7 @@ function setFilter(f, btn) {
 }
 
 function autoStatus() {
-  const map = {'sealed-box':'sealed','sealed-etb':'sealed','sealed-pack':'sealed','sealed-promo':'sealed','sealed-other':'sealed','single':'single','graded':'graded','ripped':'ripped'};
+  const map = {'sealed-box':'sealed','sealed-etb':'sealed','sealed-bundle':'sealed','sealed-pack':'sealed','sealed-promo':'sealed','sealed-other':'sealed','single':'single','graded':'graded'};
   document.getElementById('f-status').value = map[document.getElementById('f-type').value] || 'sealed';
 }
 
@@ -814,21 +847,29 @@ function exportCSV() {
 // Dashboard
 function renderDashboard() {
   const totalSpent = items.reduce((a,i) => a + i.price * i.qty, 0);
-  const totalValue = items.reduce((a,i) => a + (i.currentValue !== null ? i.currentValue * i.qty : i.price * i.qty), 0);
-  const gain = totalValue - totalSpent;
+
+  // Opened items are sunk cost — worth $0 for value purposes
+  const activeValue = items.reduce((a,i) => {
+    if (i.status === 'ripped') return a; // sunk cost
+    return a + (i.currentValue !== null ? i.currentValue * i.qty : i.price * i.qty);
+  }, 0);
+  const rippedSpend = items.filter(i => i.status === 'ripped').reduce((a,i) => a + i.price * i.qty, 0);
+  const gain = activeValue - totalSpent; // ripped spend drags this negative correctly
   const gainPct = totalSpent > 0 ? (gain / totalSpent * 100).toFixed(1) : 0;
   const types = new Set(items.map(i => i.type)).size;
+
   document.getElementById('d-spent').textContent = aud(totalSpent);
-  document.getElementById('d-value').textContent = aud(totalValue);
+  document.getElementById('d-value').textContent = aud(activeValue);
   const glEl = document.getElementById('d-gl');
   glEl.textContent = (gain >= 0 ? '+' : '') + aud(gain);
   glEl.className = 'stat-value ' + (gain >= 0 ? 'green' : 'red');
   document.getElementById('d-gl-pct').textContent = (gain >= 0 ? '+' : '') + gainPct + '%';
   document.getElementById('d-count').textContent = items.reduce((a,i) => a + i.qty, 0);
   document.getElementById('d-types').textContent = types;
-  document.getElementById('topbar-sub').textContent = items.length + ' items · ' + aud(totalValue) + ' est. value';
+  document.getElementById('topbar-sub').textContent = items.length + ' items · ' + aud(activeValue) + ' est. value';
   updateBadge();
 
+  // Spend breakdown bars
   const cats = {
     sealed:{label:'Sealed',color:'var(--teal)',spend:0},
     ripped:{label:'Opened / ripped',color:'var(--red)',spend:0},
@@ -841,25 +882,98 @@ function renderDashboard() {
     <div class="prog-row">
       <div class="prog-header"><span>${c.label}</span><span>${aud(c.spend)}</span></div>
       <div class="prog-track"><div class="prog-fill" style="width:${Math.round(c.spend/maxSpend*100)}%;background:${c.color}"></div></div>
-    </div>`).join('');
+    </div>`).join('') +
+    `<p style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Opened product is treated as a sunk cost — value is based on sealed &amp; singles only.</p>`;
 
+  // Donut chart — spend by category
+  const donutCats = [
+    {label:'Sealed', value:cats.sealed.spend, color:'#00d4aa'},
+    {label:'Opened', value:cats.ripped.spend, color:'#ff6b6b'},
+    {label:'Singles', value:cats.single.spend, color:'#4da6ff'},
+    {label:'Graded', value:cats.graded.spend, color:'#f5a623'},
+  ].filter(c => c.value > 0);
+  const donutEl = document.getElementById('dash-donut');
+  if (donutCats.length && totalSpent > 0) {
+    const size = 120; const cx = size/2; const cy = size/2; const r = 44; const stroke = 18;
+    const circ = 2 * Math.PI * r;
+    let offset = 0;
+    const slices = donutCats.map(c => {
+      const pct = c.value / totalSpent;
+      const dash = pct * circ;
+      const slice = {pct, dash, offset, color:c.color, label:c.label, value:c.value};
+      offset += dash;
+      return slice;
+    });
+    const svgSlices = slices.map(s =>
+      `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${stroke}"
+        stroke-dasharray="${s.dash} ${circ - s.dash}"
+        stroke-dashoffset="${circ - s.offset + circ/4}"
+        style="transition:stroke-dasharray 0.4s"/>`
+    ).join('');
+    const legend = donutCats.map(c =>
+      `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px">
+        <div style="width:10px;height:10px;border-radius:2px;background:${c.color};flex-shrink:0"></div>
+        <span style="color:var(--text2)">${c.label}</span>
+        <span style="color:var(--text3);margin-left:auto">${Math.round(c.value/totalSpent*100)}%</span>
+      </div>`
+    ).join('');
+    donutEl.innerHTML = `<div style="display:flex;align-items:center;gap:20px">
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface3)" stroke-width="${stroke}"/>
+        ${svgSlices}
+        <text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="11" fill="var(--text3)" font-family="-apple-system,sans-serif">spent</text>
+        <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)" font-family="-apple-system,sans-serif">${aud(totalSpent)}</text>
+      </svg>
+      <div style="flex:1">${legend}</div>
+    </div>`;
+  } else {
+    donutEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">Add items to see breakdown</div>';
+  }
+
+  // Recent purchases
   const recent = [...items].sort((a,b) => b.date.localeCompare(a.date)).slice(0,5);
   if (!recent.length) {
     document.getElementById('dash-recent').innerHTML = '<div class="empty"><span class="empty-icon">📭</span><div class="empty-title">No items yet</div><div class="empty-desc">Tap the + tab to log your first purchase</div></div>';
+    document.getElementById('dash-best').innerHTML = '';
     return;
   }
   document.getElementById('dash-recent').innerHTML = recent.map(i => `
     <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
-      <span style="font-size:22px">${ITEM_ICONS[i.type]||'📦'}</span>
+      ${typeBadge(i.type)}
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.name}</div>
-        <div style="font-size:11px;color:var(--text3)">${i.date}${i.set?' · '+i.set:''}</div>
+        <div style="font-size:11px;color:var(--text3)">${fmtDate(i.date)}${i.set?' · '+i.set:''}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:13px;font-weight:600">${aud(i.price*i.qty)}</div>
         ${statusTag(i.status)}
       </div>
     </div>`).join('');
+
+  // Best performers — top 3 by gain, sealed/singles/graded only with price data
+  const withGain = items
+    .filter(i => i.status !== 'ripped' && i.currentValue !== null)
+    .map(i => ({...i, gain: (i.currentValue - i.price) * i.qty, gainPct: ((i.currentValue - i.price) / i.price * 100)}))
+    .sort((a,b) => b.gain - a.gain)
+    .slice(0, 3);
+  const bestEl = document.getElementById('dash-best');
+  if (!withGain.length) {
+    bestEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">Refresh prices to see your best performers</div>';
+  } else {
+    const medals = ['🥇','🥈','🥉'];
+    bestEl.innerHTML = withGain.map((i,idx) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+        <span style="font-size:20px;flex-shrink:0">${medals[idx]}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.name}</div>
+          <div style="font-size:11px;color:var(--text3)">Paid ${aud(i.price*i.qty)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:${i.gain>=0?'var(--green)':'var(--red)'}">${i.gain>=0?'+':''}${aud(i.gain)}</div>
+          <div style="font-size:11px;color:var(--text3)">${i.gainPct>=0?'+':''}${i.gainPct.toFixed(1)}%</div>
+        </div>
+      </div>`).join('');
+  }
 }
 
 // Collection
@@ -884,13 +998,13 @@ function renderCollection() {
           : `<button onclick="markOpened('${i.id}')" style="font-size:10px;color:var(--text3);background:none;border:0.5px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-top:4px">Mark opened</button>`)
       : '';
     const priceStatus = i.searchTerm
-      ? (i.lastPriceFetch ? `<span style="font-size:10px;color:var(--text3)">Fetched ${i.lastPriceFetch}</span>` : `<span style="font-size:10px;color:var(--amber)">Not yet fetched</span>`)
+      ? (i.lastPriceFetch ? `<span style="font-size:10px;color:var(--text3)">Fetched ${fmtDate(i.lastPriceFetch)}</span>` : `<span style="font-size:10px;color:var(--amber)">Not yet fetched</span>`)
       : `<span style="font-size:10px;color:var(--text3)">No search term</span>`;
     return `<div class="item-row">
-      <div class="item-icon" style="background:var(--surface3)">${ITEM_ICONS[i.type]||'📦'}</div>
+      ${typeBadge(i.type)}
       <div class="item-body">
         <div class="item-name">${i.name}${i.qty>1?' ×'+i.qty:''}</div>
-        <div class="item-meta">${i.date}${i.set?' · '+i.set:''}${i.source?' · '+i.source:''}${i.grade?' · '+i.grade:''}</div>
+        <div class="item-meta">${fmtDate(i.date)}${i.set?' · '+i.set:''}${i.source?' · '+i.source:''}${i.grade?' · '+i.grade:''}</div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${statusTag(i.status)}
           <span style="font-size:12px;color:var(--text3)">paid ${aud(paid)}</span>
