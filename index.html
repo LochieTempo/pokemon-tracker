@@ -608,7 +608,13 @@ function autoSearchTerm() {
   const nameEl = document.getElementById('f-name');
   const searchEl = document.getElementById('f-search');
   if (!searchEl._manuallyEdited) {
-    searchEl.value = nameEl.value.trim() ? nameEl.value.trim() + ' Pokemon' : '';
+    const name = nameEl.value.trim();
+    if (!name) { searchEl.value = ''; return; }
+    const type = document.getElementById('f-type').value;
+    const suffix = type === 'graded' ? 'Pokemon PSA'
+      : type === 'single' ? 'Pokemon card'
+      : 'Pokemon sealed';
+    searchEl.value = name + ' ' + suffix;
   }
 }
 
@@ -998,7 +1004,11 @@ function renderCollection() {
           : `<button onclick="markOpened('${i.id}')" style="font-size:10px;color:var(--text3);background:none;border:0.5px solid var(--border);border-radius:4px;padding:3px 6px;cursor:pointer;margin-top:4px">Mark opened</button>`)
       : '';
     const priceStatus = i.searchTerm
-      ? (i.lastPriceFetch ? `<span style="font-size:10px;color:var(--text3)">Fetched ${fmtDate(i.lastPriceFetch)}</span>` : `<span style="font-size:10px;color:var(--amber)">Not yet fetched</span>`)
+      ? (i.lastPriceFetch
+          ? `<span style="font-size:10px;color:${i.priceFallback?'var(--amber)':'var(--text3)'}">
+              ${i.priceFallback ? '⚠️ Older data · ' : ''}${i.priceCount || ''} sales · ${fmtDate(i.lastPriceFetch)}
+             </span>`
+          : `<span style="font-size:10px;color:var(--amber)">Not yet fetched</span>`)
       : `<span style="font-size:10px;color:var(--text3)">No search term</span>`;
     return `<div class="item-row">
       ${typeBadge(i.type)}
@@ -1082,24 +1092,76 @@ function renderSpending() {
 }
 
 // Price fetch
+const EBAY_APP_ID = 'LachlanT-PokeVaul-PRD-2dcdac77d-38bb9139';
+const EBAY_CORS_PROXY = 'https://corsproxy.io/?url=';
+const EBAY_DAYS_WINDOW = 90;
+
+async function fetchEbayListings(searchTerm, daysBack) {
+  const params = new URLSearchParams({
+    'OPERATION-NAME': 'findCompletedItems',
+    'SERVICE-VERSION': '1.0.0',
+    'SECURITY-APPNAME': EBAY_APP_ID,
+    'RESPONSE-DATA-FORMAT': 'JSON',
+    'REST-PAYLOAD': '',
+    'keywords': searchTerm,
+    'itemFilter(0).name': 'SoldItemsOnly',
+    'itemFilter(0).value': 'true',
+    'itemFilter(1).name': 'ListingType',
+    'itemFilter(1).value': 'AuctionWithBIN,FixedPrice',
+    'sortOrder': 'EndTimeSoonest',
+    'paginationInput.entriesPerPage': '20',
+    'globalId': 'EBAY-AU'
+  });
+  if (daysBack) {
+    const from = new Date();
+    from.setDate(from.getDate() - daysBack);
+    params.append('itemFilter(2).name', 'EndTimeFrom');
+    params.append('itemFilter(2).value', from.toISOString());
+  }
+  const url = EBAY_CORS_PROXY + encodeURIComponent(
+    'https://svcs.ebay.com/services/search/FindingService/v1?' + params.toString()
+  );
+  const resp = await fetch(url);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  const root = data?.findCompletedItemsResponse?.[0];
+  if (root?.ack?.[0] !== 'Success') return null;
+  return root?.searchResult?.[0]?.item || null;
+}
+
 async function fetchPrice(searchTerm) {
   if (!searchTerm) return null;
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 400,
-        messages: [{role:'user',content:`Search eBay Australia sold listings for: "${searchTerm}". Find the median recently sold price in AUD. Reply with ONLY a single number, no dollar sign, no text. If you cannot find data, reply with the word null.`}],
-        tools: [{type:'web_search_20250305',name:'web_search'}]
+    // Try with 90-day window first
+    let listings = await fetchEbayListings(searchTerm, EBAY_DAYS_WINDOW);
+    let usedFallback = false;
+
+    // Fallback: no date filter if 90 days returned nothing
+    if (!listings || !listings.length) {
+      listings = await fetchEbayListings(searchTerm, null);
+      usedFallback = true;
+    }
+
+    if (!listings || !listings.length) return null;
+
+    const prices = listings
+      .map(item => {
+        const price = parseFloat(item?.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
+        const currency = item?.sellingStatus?.[0]?.currentPrice?.[0]?.['@currencyId'] || 'AUD';
+        return currency === 'AUD' ? price : null;
       })
-    });
-    const data = await resp.json();
-    const text = data.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
-    if (text.toLowerCase() === 'null' || text === '') return null;
-    const match = text.match(/[\d,]+\.?\d*/);
-    return match ? parseFloat(match[0].replace(/,/g,'')) : null;
-  } catch(e) { return null; }
+      .filter(p => p && p > 0)
+      .sort((a, b) => a - b);
+
+    if (!prices.length) return null;
+
+    const mid = Math.floor(prices.length / 2);
+    const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
+    return { price: median, fallback: usedFallback, count: prices.length };
+  } catch(e) {
+    console.error('eBay price fetch error:', e);
+    return null;
+  }
 }
 
 async function refreshAllPrices() {
@@ -1109,16 +1171,27 @@ async function refreshAllPrices() {
   pricesFetching = true;
   const menuBtn = document.getElementById('menu-btn');
   if (menuBtn) menuBtn.style.opacity = '0.5';
-  toast('Fetching ' + priceable.length + ' price' + (priceable.length > 1 ? 's' : '') + '…');
   let updated = 0;
-  for (const item of priceable) {
-    const price = await fetchPrice(item.searchTerm);
-    if (price !== null) { item.currentValue = price; item.lastPriceFetch = new Date().toISOString().split('T')[0]; updated++; }
+  let fallbacks = 0;
+  for (let idx = 0; idx < priceable.length; idx++) {
+    const item = priceable[idx];
+    toast(`Fetching ${idx + 1} of ${priceable.length}: ${item.name.substring(0,24)}…`);
+    const result = await fetchPrice(item.searchTerm);
+    if (result !== null) {
+      item.currentValue = result.price;
+      item.lastPriceFetch = new Date().toISOString().split('T')[0];
+      item.priceFallback = result.fallback;
+      item.priceCount = result.count;
+      updated++;
+      if (result.fallback) fallbacks++;
+    }
   }
   save();
   pricesFetching = false;
   if (menuBtn) menuBtn.style.opacity = '1';
-  toast('✅ Updated ' + updated + ' of ' + priceable.length + ' prices');
+  let msg = updated > 0 ? `✅ Updated ${updated} of ${priceable.length} prices` : '⚠️ No prices found — check search terms';
+  if (fallbacks > 0) msg += ` (${fallbacks} used older data)`;
+  toast(msg);
   const activeSection = document.querySelector('.section.active');
   if (activeSection) {
     const id = activeSection.id.replace('tab-','');
