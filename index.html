@@ -1028,9 +1028,12 @@ function renderCollection() {
         <button class="btn-edit-sm" onclick="openEditModal('${i.id}')" aria-label="Edit item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
-        <button class="btn-edit-sm" onclick="duplicateItem('${i.id}')" aria-label="Duplicate item" title="Duplicate as template">
+        <button class="btn-edit-sm" onclick="duplicateItem('${i.id}')" aria-label="Duplicate item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
+        ${i.searchTerm ? `<button class="btn-edit-sm" onclick="refreshSingleItem('${i.id}')" aria-label="Refresh price" title="Refresh price">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>` : ''}
         <button class="btn-danger-sm" onclick="deleteItem('${i.id}')" aria-label="Delete item">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         </button>
@@ -1092,89 +1095,55 @@ function renderSpending() {
 }
 
 // Price fetch
-const EBAY_APP_ID = 'LachlanT-PokeVaul-PRD-2dcdac77d-38bb9139';
-const CORS_PROXIES = [
-  'https://corsproxy.io/?url=',
-  'https://api.allorigins.win/raw?url=',
-  'https://thingproxy.freeboard.io/fetch/'
-];
 const EBAY_DAYS_WINDOW = 90;
 
 async function fetchEbayListings(searchTerm, daysBack) {
-  const params = new URLSearchParams({
-    'OPERATION-NAME': 'findCompletedItems',
-    'SERVICE-VERSION': '1.0.0',
-    'SECURITY-APPNAME': EBAY_APP_ID,
-    'RESPONSE-DATA-FORMAT': 'JSON',
-    'REST-PAYLOAD': '',
-    'keywords': searchTerm,
-    'itemFilter(0).name': 'SoldItemsOnly',
-    'itemFilter(0).value': 'true',
-    'itemFilter(1).name': 'ListingType',
-    'itemFilter(1).value': 'AuctionWithBIN,FixedPrice',
-    'sortOrder': 'EndTimeSoonest',
-    'paginationInput.entriesPerPage': '20',
-    'globalId': 'EBAY-AU'
-  });
-  if (daysBack) {
-    const from = new Date();
-    from.setDate(from.getDate() - daysBack);
-    params.append('itemFilter(2).name', 'EndTimeFrom');
-    params.append('itemFilter(2).value', from.toISOString());
-  }
-  const ebayUrl = 'https://svcs.ebay.com/services/search/FindingService/v1?' + params.toString();
-
-  // Try each proxy in turn until one works
-  for (const proxy of CORS_PROXIES) {
-    try {
-      const resp = await fetch(proxy + encodeURIComponent(ebayUrl), { signal: AbortSignal.timeout(8000) });
-      if (!resp.ok) { console.warn('Proxy failed:', proxy, resp.status); continue; }
-      const data = await resp.json();
-      const root = data?.findCompletedItemsResponse?.[0];
-      if (!root) { console.warn('No root in response from proxy:', proxy); continue; }
-      if (root?.ack?.[0] !== 'Success') { console.warn('eBay ack not success:', root?.ack?.[0], root?.errorMessage); continue; }
-      return root?.searchResult?.[0]?.item || [];
-    } catch(e) {
-      console.warn('Proxy error:', proxy, e.message);
-      continue;
+  const params = new URLSearchParams({ searchTerm });
+  try {
+    const resp = await fetch('/.netlify/functions/ebay-price?' + params.toString(), {
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error || !data.median) {
+      console.warn('Price lookup:', data.error || 'no result');
+      return null;
     }
+    console.log('Price result — median:', data.median, 'for:', searchTerm);
+    return { median: data.median, count: data.count };
+  } catch(e) {
+    console.error('Fetch error:', e.message);
+    return null;
   }
-  console.error('All proxies failed for:', searchTerm);
-  return null;
 }
 
 async function fetchPrice(searchTerm) {
   if (!searchTerm) return null;
   try {
-    // Try with 90-day window first
-    let listings = await fetchEbayListings(searchTerm, EBAY_DAYS_WINDOW);
-    let usedFallback = false;
-
-    // Fallback: no date filter if 90 days returned nothing
-    if (!listings || !listings.length) {
-      listings = await fetchEbayListings(searchTerm, null);
-      usedFallback = true;
-    }
-
-    if (!listings || !listings.length) return null;
-
-    const prices = listings
-      .map(item => {
-        const price = parseFloat(item?.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || 0);
-        const currency = item?.sellingStatus?.[0]?.currentPrice?.[0]?.['@currencyId'] || 'AUD';
-        return currency === 'AUD' ? price : null;
-      })
-      .filter(p => p && p > 0)
-      .sort((a, b) => a - b);
-
-    if (!prices.length) return null;
-
-    const mid = Math.floor(prices.length / 2);
-    const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2;
-    return { price: median, fallback: usedFallback, count: prices.length };
+    const result = await fetchEbayListings(searchTerm);
+    if (!result) return null;
+    return { price: result.median, fallback: false, count: result.count };
   } catch(e) {
-    console.error('eBay price fetch error:', e);
+    console.error('fetchPrice error:', e);
     return null;
+  }
+}
+
+async function refreshSingleItem(id) {
+  const item = items.find(i => i.id === id);
+  if (!item || !item.searchTerm) { toast('⚠️ No search term on this item'); return; }
+  toast('Fetching price for ' + item.name.substring(0, 24) + '…');
+  const result = await fetchPrice(item.searchTerm);
+  if (result) {
+    item.currentValue = result.price;
+    item.lastPriceFetch = new Date().toISOString().split('T')[0];
+    item.priceFallback = result.fallback;
+    item.priceCount = result.count;
+    save();
+    renderCollection();
+    renderDashboard();
+    toast('✅ Updated: ' + aud(result.price));
+  } else {
+    toast('⚠️ No price found — try refining the search term');
   }
 }
 
