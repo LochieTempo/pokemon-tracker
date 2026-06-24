@@ -19,26 +19,20 @@ exports.handler = async function(event) {
   }
 
   try {
-    const prompt = `Search the web for recently sold prices of this Pokemon item on eBay Australia: "${searchTerm}"
+    const prompt = `Find the current market price in AUD for this Pokemon item: "${searchTerm}"
 
-Try these specific searches:
-1. Search for: ${searchTerm} ebay.com.au sold completed AUD
-2. If that doesn't work, try: ${searchTerm} ebay australia price 2024 2025
+Search for it on these sites which track actual sold prices:
+1. Search: site:pricecharting.com "${searchTerm}"
+2. Search: "${searchTerm}" pokemon price AUD australia 2025
 
-Look specifically for:
-- eBay Australia completed listing prices (shown as "AU $XXX" or "AUD $XXX")  
-- Price guide websites that track eBay AU sold prices for Pokemon cards/products
-- Any website showing what this item actually sold for recently in Australia
+PriceCharting.com is the best source — it tracks real eBay sold prices. Look for the "Loose", "Complete" or "New/Sealed" price depending on what's most relevant for a sealed Pokemon product.
 
-Collect all individual AUD prices you find. Ignore:
-- Non-AUD prices
-- Bundle listings (2+ items)
-- Prices under $10
+Convert any USD prices to AUD using approximately 1 USD = 1.58 AUD if no AUD price is available.
 
 Respond with ONLY this JSON and nothing else:
-{"median": 599.00, "count": 8}
+{"median": 599.00, "count": 1, "source": "PriceCharting"}
 
-If you genuinely cannot find any sold prices, respond with:
+If you cannot find any price at all, respond with:
 {"median": null, "count": 0}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
