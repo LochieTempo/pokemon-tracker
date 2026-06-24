@@ -423,6 +423,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       View eBay AU sold listings
     </a>
+    <p style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:12px;line-height:1.4">💡 Use the home screen app for the best experience — eBay opens as a popup you dismiss with Done</p>
     <button class="btn btn-primary" onclick="savePriceModal()" style="margin-bottom:8px">Save price</button>
     <button class="btn btn-secondary" onclick="closePriceModal()">Cancel</button>
   </div>
@@ -1239,15 +1240,26 @@ function savePriceModal() {
   if (!val || val <= 0) { toast('⚠️ Enter a valid price'); return; }
   const item = items.find(i => i.id === priceModalItemId);
   if (!item) return;
-  item.currentValue = val;
-  item.lastPriceFetch = new Date().toISOString().split('T')[0];
-  item.priceFallback = false;
+
+  // Sync price to all items with the same name
+  const nameLower = item.name.toLowerCase();
+  const today = new Date().toISOString().split('T')[0];
+  const matches = items.filter(i => i.name.toLowerCase() === nameLower);
+  matches.forEach(i => {
+    i.currentValue = val;
+    i.lastPriceFetch = today;
+    i.priceFallback = false;
+  });
+
   save();
   document.getElementById('price-modal').classList.remove('open');
   priceModalItemId = null;
   renderCollection();
   renderDashboard();
-  toast('✅ Value updated: ' + aud(val));
+  const msg = matches.length > 1
+    ? `✅ Updated ${matches.length} items: ${aud(val)}`
+    : `✅ Value updated: ${aud(val)}`;
+  toast(msg);
 }
 
 // Topbar menu
