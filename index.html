@@ -238,6 +238,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
         <div id="dash-best"></div>
       </div>
       <div class="card">
+        <div class="card-title">✨ Best pulls</div>
+        <div id="dash-pulls"></div>
+      </div>
+      <div class="card">
         <div class="card-title">Recent purchases</div>
         <div id="dash-recent"></div>
       </div>
@@ -987,15 +991,15 @@ function renderDashboard() {
       </div>
     </div>`).join('');
 
-  // Best performers — top 3 by gain, sealed/singles/graded only with price data
+  // Best performers — sealed/graded with a real purchase price, sorted by dollar gain
   const withGain = items
-    .filter(i => i.status !== 'ripped' && i.currentValue !== null)
+    .filter(i => i.status !== 'ripped' && i.status !== 'single' && i.currentValue !== null && i.price > 0)
     .map(i => ({...i, gain: (i.currentValue - i.price) * i.qty, gainPct: ((i.currentValue - i.price) / i.price * 100)}))
     .sort((a,b) => b.gain - a.gain)
     .slice(0, 3);
   const bestEl = document.getElementById('dash-best');
   if (!withGain.length) {
-    bestEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">Refresh prices to see your best performers</div>';
+    bestEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">Set prices on sealed items to see best performers</div>';
   } else {
     const medals = ['🥇','🥈','🥉'];
     bestEl.innerHTML = withGain.map((i,idx) => `
@@ -1008,6 +1012,30 @@ function renderDashboard() {
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:13px;font-weight:700;color:${i.gain>=0?'var(--green)':'var(--red)'}">${i.gain>=0?'+':''}${aud(i.gain)}</div>
           <div style="font-size:11px;color:var(--text3)">${i.gainPct>=0?'+':''}${i.gainPct.toFixed(1)}%</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Best pulls — singles/graded with $0 purchase price, sorted by current value
+  const pulls = items
+    .filter(i => (i.status === 'single' || i.status === 'graded') && i.price === 0 && i.currentValue !== null && i.currentValue > 0)
+    .sort((a,b) => (b.currentValue * b.qty) - (a.currentValue * a.qty))
+    .slice(0, 3);
+  const pullsEl = document.getElementById('dash-pulls');
+  if (!pulls.length) {
+    pullsEl.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">Log singles at $0 cost to track your best pulls here</div>';
+  } else {
+    const gems = ['💎','💫','⭐'];
+    pullsEl.innerHTML = pulls.map((i,idx) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+        <span style="font-size:20px;flex-shrink:0">${gems[idx]}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.name}</div>
+          <div style="font-size:11px;color:var(--text3)">${i.set ? i.set + ' · ' : ''}${i.grade || 'Raw pull'}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700;color:var(--accent2)">${aud(i.currentValue * i.qty)}</div>
+          <div style="font-size:11px;color:var(--text3)">free pull</div>
         </div>
       </div>`).join('');
   }
