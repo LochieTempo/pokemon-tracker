@@ -19,22 +19,25 @@ exports.handler = async function(event) {
   }
 
   try {
-    // Build the exact eBay AU sold listings URL so the model searches the right place
-    const query = encodeURIComponent(searchTerm);
-    const ebayUrl = `https://www.ebay.com.au/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1&_sop=13`;
+    const prompt = `I need to find the current median sold price for this Pokemon item on eBay Australia: "${searchTerm}"
 
-    const prompt = `Fetch this eBay Australia sold listings page and tell me the median sold price in AUD:
-${ebayUrl}
+Please search the web for recent sold/completed listings. Good search queries to try:
+- "${searchTerm} sold ebay.com.au"  
+- "${searchTerm} ebay australia completed listings"
 
-Rules:
-- Only use prices from SINGLE item sales (ignore listings selling 2, 3 or more together)
-- Only use AUD prices
-- Calculate the median of the prices you find
-- Reply with ONLY a single number (the median AUD price). No dollar sign, no explanation, no other text.
-- If the page has no sold listings, reply with exactly: null`;
+From the search results, collect all individual sold prices in AUD. Rules:
+- Only AUD prices (ignore USD, GBP etc)
+- Only single item sales (ignore bundle listings of 2+ items)
+- Only prices above $10 AUD
+- Focus on the most recent sales
 
-    // Step 1: Force a web search
-    const step1 = await fetch('https://api.anthropic.com/v1/messages', {
+After searching, respond with ONLY a valid JSON object and nothing else — no explanation, no markdown, just the JSON:
+{"median": 599.00, "count": 8}
+
+Where median is the median AUD sold price rounded to 2 decimal places, and count is how many individual prices you found.
+If you found no valid sold prices, respond with exactly: {"median": null, "count": 0}`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -45,101 +48,52 @@ Rules:
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        tool_choice: { type: 'any' }, // Force tool use
         messages: [{ role: 'user', content: prompt }]
       })
     });
 
-    if (!step1.ok) {
-      const err = await step1.text();
-      console.error('Anthropic step1 error:', step1.status, err.substring(0, 300));
-      return { statusCode: 200, headers, body: JSON.stringify({ error: `API error: ${step1.status}` }) };
+    if (!response.ok) {
+      const err = await response.text();
+      console.error('Anthropic error:', response.status, err.substring(0, 300));
+      return { statusCode: 200, headers, body: JSON.stringify({ error: `API error ${response.status}` }) };
     }
 
-    const data1 = await step1.json();
-    console.log('Step1 stop_reason:', data1.stop_reason, 'content blocks:', data1.content?.length);
+    const data = await response.json();
+    console.log('stop_reason:', data.stop_reason, 'blocks:', data.content?.length);
 
-    // If model returned text directly (shouldn't happen with tool_choice: any, but handle it)
-    if (data1.stop_reason === 'end_turn') {
-      const text = data1.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
-      console.log('Direct text response:', text.substring(0, 200));
-      const match = text.match(/\b(\d[\d,]*\.?\d{0,2})\b/);
-      if (match) {
-        const price = parseFloat(match[1].replace(/,/g, ''));
-        if (price > 0) return { statusCode: 200, headers, body: JSON.stringify({ median: price, count: 1 }) };
-      }
-      return { statusCode: 200, headers, body: JSON.stringify({ error: 'No price in response: ' + text.substring(0, 100) }) };
-    }
-
-    // Step 2: Continue with tool results so model can give final answer
-    const messages = [
-      { role: 'user', content: prompt },
-      { role: 'assistant', content: data1.content }
-    ];
-
-    // Add tool results
-    const toolResults = data1.content
-      .filter(b => b.type === 'tool_use')
-      .map(b => ({
-        type: 'tool_result',
-        tool_use_id: b.id,
-        content: b.type === 'tool_use' ? 'Search completed' : ''
-      }));
-
-    if (toolResults.length) {
-      messages.push({ role: 'user', content: toolResults });
-    }
-
-    const step2 = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 256,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages
-      })
-    });
-
-    if (!step2.ok) {
-      const err = await step2.text();
-      console.error('Anthropic step2 error:', step2.status, err.substring(0, 300));
-      return { statusCode: 200, headers, body: JSON.stringify({ error: `API step2 error: ${step2.status}` }) };
-    }
-
-    const data2 = await step2.json();
-    const finalText = data2.content
+    // Extract all text blocks from the response
+    const textBlocks = data.content
       .filter(b => b.type === 'text')
       .map(b => b.text)
-      .join('')
-      .trim();
+      .join('');
 
-    console.log('Search term:', searchTerm, '→ Final response:', finalText.substring(0, 200));
+    console.log('Raw text response:', textBlocks.substring(0, 400));
 
-    if (!finalText || finalText.toLowerCase().includes('null')) {
-      return { statusCode: 200, headers, body: JSON.stringify({ error: 'No sold listings found' }) };
+    // Parse the JSON response
+    const jsonMatch = textBlocks.match(/\{[^{}]*"median"[^{}]*\}/);
+    if (!jsonMatch) {
+      console.warn('No JSON found in response');
+      return { statusCode: 200, headers, body: JSON.stringify({ error: 'No structured response from model' }) };
     }
 
-    // Extract first number that looks like a price
-    const match = finalText.match(/\b(\d[\d,]*\.?\d{0,2})\b/);
-    if (!match) {
-      return { statusCode: 200, headers, body: JSON.stringify({ error: 'Could not parse price: ' + finalText.substring(0, 100) }) };
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch(e) {
+      console.warn('JSON parse failed:', jsonMatch[0]);
+      return { statusCode: 200, headers, body: JSON.stringify({ error: 'Could not parse JSON response' }) };
     }
 
-    const price = parseFloat(match[1].replace(/,/g, ''));
-    if (!price || price <= 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ error: 'Invalid price value: ' + match[1] }) };
+    if (!parsed.median || parsed.median < 10) {
+      console.log('No valid price found, median was:', parsed.median);
+      return { statusCode: 200, headers, body: JSON.stringify({ error: 'No valid sold prices found' }) };
     }
 
-    console.log('Final price:', price, 'AUD');
+    console.log('Final price:', parsed.median, 'AUD from', parsed.count, 'sales');
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ median: price, count: 1 })
+      body: JSON.stringify({ median: parsed.median, count: parsed.count || 1 })
     };
 
   } catch(e) {
