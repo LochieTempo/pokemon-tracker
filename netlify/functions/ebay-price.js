@@ -19,24 +19,28 @@ exports.handler = async function(event) {
   }
 
   try {
-    const prompt = `Find the current market price in AUD for this single Pokemon item: "${searchTerm}"
+    const prompt = `Find the current market price in AUSTRALIAN DOLLARS (AUD) for this Pokemon sealed product: "${searchTerm}"
 
-Search PriceCharting.com first — it's the most accurate source. Search: site:pricecharting.com "${searchTerm}"
+CRITICAL: Australian Pokemon prices are often 2-3x higher than US prices. Do NOT use US prices and convert them to AUD — the result will be far too low and useless.
 
-Also try Australian Pokemon price sources if needed.
+Search specifically for Australian market data. Try these searches:
+1. "${searchTerm}" pokemon "AU $" sold ebay.com.au 2025 2026
+2. "${searchTerm}" pokemon price australia AUD 2025 2026
+3. "${searchTerm}" pokemon australia sold
 
-Important rules:
-- Use the "New/Sealed" price from PriceCharting for sealed products
-- NEVER divide a lot or bundle price (e.g. if you see "8x lot sold for $1200", ignore it completely — do not divide)
-- Only use prices for SINGLE individual items
-- Do NOT use StockX "Lowest Ask" prices — those are asking prices not sold prices
-- Prefer AUD prices. If only USD available, convert using 1 USD = 1.55 AUD
-- The price should be realistic for an Australian Pokemon collector (typically $30-$2000 AUD range)
+Look for:
+- Prices mentioned in AUD (AU $XXX format) from Australian buyers/sellers
+- eBay Australia completed listing prices
+- Australian Pokemon community discussions mentioning prices paid
+- If it's an ETB (Elite Trainer Box), search for the complete sealed box price, NOT individual promo cards from inside it
+
+Only return a price if you're confident it's an AUSTRALIAN market price in AUD.
+If you can only find US prices, return null — a wrong price is worse than no price.
 
 Respond with ONLY this JSON and nothing else:
-{"median": 599.00, "count": 1, "source": "PriceCharting"}
+{"median": 299.00, "count": 1, "source": "eBay AU"}
 
-If you cannot find any price, respond with:
+If no Australian price found, respond with:
 {"median": null, "count": 0}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
