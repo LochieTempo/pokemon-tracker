@@ -19,23 +19,27 @@ exports.handler = async function(event) {
   }
 
   try {
-    const prompt = `I need to find the current median sold price for this Pokemon item on eBay Australia: "${searchTerm}"
+    const prompt = `Search the web for recently sold prices of this Pokemon item on eBay Australia: "${searchTerm}"
 
-Please search the web for recent sold/completed listings. Good search queries to try:
-- "${searchTerm} sold ebay.com.au"  
-- "${searchTerm} ebay australia completed listings"
+Try these specific searches:
+1. Search for: ${searchTerm} ebay.com.au sold completed AUD
+2. If that doesn't work, try: ${searchTerm} ebay australia price 2024 2025
 
-From the search results, collect all individual sold prices in AUD. Rules:
-- Only AUD prices (ignore USD, GBP etc)
-- Only single item sales (ignore bundle listings of 2+ items)
-- Only prices above $10 AUD
-- Focus on the most recent sales
+Look specifically for:
+- eBay Australia completed listing prices (shown as "AU $XXX" or "AUD $XXX")  
+- Price guide websites that track eBay AU sold prices for Pokemon cards/products
+- Any website showing what this item actually sold for recently in Australia
 
-After searching, respond with ONLY a valid JSON object and nothing else — no explanation, no markdown, just the JSON:
+Collect all individual AUD prices you find. Ignore:
+- Non-AUD prices
+- Bundle listings (2+ items)
+- Prices under $10
+
+Respond with ONLY this JSON and nothing else:
 {"median": 599.00, "count": 8}
 
-Where median is the median AUD sold price rounded to 2 decimal places, and count is how many individual prices you found.
-If you found no valid sold prices, respond with exactly: {"median": null, "count": 0}`;
+If you genuinely cannot find any sold prices, respond with:
+{"median": null, "count": 0}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
