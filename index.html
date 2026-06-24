@@ -318,7 +318,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
           </div>
           <div class="field">
             <label>Grade / condition</label>
-            <input type="text" id="f-grade" placeholder="e.g. PSA 10, NM, Sealed" autocapitalize="words">
+            <input type="text" id="f-grade" placeholder="e.g. PSA 10, NM, Sealed" autocapitalize="words" oninput="autoSearchTerm()">
           </div>
         </div>
       </div>
@@ -639,9 +639,11 @@ function autoSearchTerm() {
     const name = nameEl.value.trim();
     if (!name) { searchEl.value = ''; return; }
     const type = document.getElementById('f-type').value;
-    const suffix = type === 'graded' ? 'Pokemon PSA'
+    const grade = document.getElementById('f-grade').value.trim();
+    const fallback = type === 'graded' ? 'Pokemon PSA'
       : type === 'single' ? 'Pokemon card'
       : 'Pokemon sealed';
+    const suffix = grade ? 'Pokemon ' + grade : fallback;
     searchEl.value = name + ' ' + suffix;
   }
 }
@@ -664,7 +666,7 @@ function saveItem() {
   const priceStr = document.getElementById('f-price').value;
   const date = document.getElementById('f-date').value;
   if (!name) { toast('⚠️ Enter an item name'); return; }
-  if (!priceStr || parseFloat(priceStr) <= 0) { toast('⚠️ Enter the price paid'); return; }
+  if (!priceStr || parseFloat(priceStr) < 0) { toast('⚠️ Enter the price paid'); return; }
   if (!date) { toast('⚠️ Select a purchase date'); return; }
 
   const searchVal = document.getElementById('f-search').value.trim();
