@@ -698,9 +698,16 @@ function saveItem() {
       searchTerm: searchVal,
       currentValue: null, lastPriceFetch: null
     };
+    // Auto-apply price if another item with same name already has one
+    const existing = items.find(i => i.name.toLowerCase() === name.toLowerCase() && i.currentValue !== null);
+    if (existing) {
+      item.currentValue = existing.currentValue;
+      item.lastPriceFetch = existing.lastPriceFetch;
+    }
     items.unshift(item);
     save();
-    toast('✅ Added: ' + name);
+    const priceNote = existing ? ` · Value set to ${aud(existing.currentValue)}` : '';
+    toast('✅ Added: ' + name + priceNote);
     cancelEdit();
     renderDashboard();
   }
@@ -1065,14 +1072,17 @@ function renderCollection() {
 // Spending
 function renderSpending() {
   const totalSpent = items.reduce((a,i) => a + i.price * i.qty, 0);
-  const totalValue = items.reduce((a,i) => a + (i.currentValue !== null ? i.currentValue * i.qty : i.price * i.qty), 0);
-  const gain = totalValue - totalSpent;
+  // Match dashboard logic — ripped items are sunk cost, excluded from value
+  const activeValue = items.reduce((a,i) => {
+    if (i.status === 'ripped') return a;
+    return a + (i.currentValue !== null ? i.currentValue * i.qty : i.price * i.qty);
+  }, 0);
+  const gain = activeValue - totalSpent;
   const pct = totalSpent > 0 ? ((gain / totalSpent) * 100).toFixed(1) : 0;
   document.getElementById('s-invested').textContent = aud(totalSpent);
   const retEl = document.getElementById('s-return');
   retEl.textContent = (gain >= 0 ? '+' : '') + pct + '%';
   retEl.className = 'stat-value ' + (gain >= 0 ? 'green' : 'red');
-
   const byMonth = {};
   items.forEach(i => { const m = i.date.substring(0,7); byMonth[m] = (byMonth[m]||0) + i.price * i.qty; });
   const months = Object.keys(byMonth).sort();
@@ -1108,7 +1118,7 @@ function renderSpending() {
   const sealedVal = items.filter(i=>i.status==='sealed').reduce((a,i)=>a+(i.currentValue!==null?i.currentValue*i.qty:i.price*i.qty),0);
   document.getElementById('fin-health').innerHTML = `
     <div class="health-row"><span class="health-label">Total invested</span><span class="health-val" style="color:var(--accent2)">${aud(totalSpent)}</span></div>
-    <div class="health-row"><span class="health-label">Est. market value</span><span class="health-val" style="color:var(--green)">${aud(totalValue)}</span></div>
+    <div class="health-row"><span class="health-label">Est. market value</span><span class="health-val" style="color:var(--green)">${aud(activeValue)}</span></div>
     <div class="health-row"><span class="health-label">Unrealised gain/loss</span><span class="health-val" style="color:${gain>=0?'var(--green)':'var(--red)'}">${gain>=0?'+':''}${aud(gain)}</span></div>
     <div class="health-row"><span class="health-label">Sealed inventory value</span><span class="health-val" style="color:var(--teal)">${aud(sealedVal)}</span></div>
     <div class="health-row"><span class="health-label">Return on spend</span><span class="health-val" style="color:${gain>=0?'var(--green)':'var(--red)'}">${gain>=0?'+':''}${pct}%</span></div>`;
