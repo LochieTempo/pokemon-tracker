@@ -1093,7 +1093,11 @@ function renderSpending() {
 
 // Price fetch
 const EBAY_APP_ID = 'LachlanT-PokeVaul-PRD-2dcdac77d-38bb9139';
-const EBAY_CORS_PROXY = 'https://corsproxy.io/?url=';
+const CORS_PROXIES = [
+  'https://corsproxy.io/?url=',
+  'https://api.allorigins.win/raw?url=',
+  'https://thingproxy.freeboard.io/fetch/'
+];
 const EBAY_DAYS_WINDOW = 90;
 
 async function fetchEbayListings(searchTerm, daysBack) {
@@ -1118,15 +1122,25 @@ async function fetchEbayListings(searchTerm, daysBack) {
     params.append('itemFilter(2).name', 'EndTimeFrom');
     params.append('itemFilter(2).value', from.toISOString());
   }
-  const url = EBAY_CORS_PROXY + encodeURIComponent(
-    'https://svcs.ebay.com/services/search/FindingService/v1?' + params.toString()
-  );
-  const resp = await fetch(url);
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  const root = data?.findCompletedItemsResponse?.[0];
-  if (root?.ack?.[0] !== 'Success') return null;
-  return root?.searchResult?.[0]?.item || null;
+  const ebayUrl = 'https://svcs.ebay.com/services/search/FindingService/v1?' + params.toString();
+
+  // Try each proxy in turn until one works
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const resp = await fetch(proxy + encodeURIComponent(ebayUrl), { signal: AbortSignal.timeout(8000) });
+      if (!resp.ok) { console.warn('Proxy failed:', proxy, resp.status); continue; }
+      const data = await resp.json();
+      const root = data?.findCompletedItemsResponse?.[0];
+      if (!root) { console.warn('No root in response from proxy:', proxy); continue; }
+      if (root?.ack?.[0] !== 'Success') { console.warn('eBay ack not success:', root?.ack?.[0], root?.errorMessage); continue; }
+      return root?.searchResult?.[0]?.item || [];
+    } catch(e) {
+      console.warn('Proxy error:', proxy, e.message);
+      continue;
+    }
+  }
+  console.error('All proxies failed for:', searchTerm);
+  return null;
 }
 
 async function fetchPrice(searchTerm) {
