@@ -247,8 +247,20 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
       </div>
     </div>
 
-    <!-- COLLECTION -->
+    <!-- COLLECTION (aggregated view) -->
     <div id="tab-collection" class="section">
+      <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:14px;-webkit-overflow-scrolling:touch;scrollbar-width:none" id="vault-sort-row">
+        <button class="btn-sm active-filter" onclick="setVaultSort('value',this)">By Value</button>
+        <button class="btn-sm" onclick="setVaultSort('gain',this)">By Gain</button>
+        <button class="btn-sm" onclick="setVaultSort('type',this)">By Type</button>
+        <button class="btn-sm" onclick="setVaultSort('set',this)">By Set</button>
+        <button class="btn-sm" onclick="setVaultSort('name',this)">By Name</button>
+      </div>
+      <div id="vault-list"></div>
+    </div>
+
+    <!-- HISTORY (purchase log) -->
+    <div id="tab-history" class="section">
       <div class="filter-row" id="filter-row">
         <button class="btn-sm active-filter" onclick="setFilter('all',this)">All</button>
         <button class="btn-sm" onclick="setFilter('sealed',this)">Sealed</button>
@@ -365,19 +377,23 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <nav class="nav">
     <button class="nav-btn active" onclick="switchTab('dashboard',this)" aria-label="Dashboard">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      <span>Dashboard</span>
+      <span>Dash</span>
     </button>
     <button class="nav-btn" onclick="switchTab('collection',this)" aria-label="Collection">
-      <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="7" y1="4" x2="7" y2="9"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M2 20h20M2 14h20M2 8h20M2 2h20" stroke-linecap="round"/></svg>
       <span>Collection <span class="nav-badge" id="collection-badge" style="display:none"></span></span>
     </button>
-    <button class="nav-btn" onclick="switchTab('add',this)" aria-label="Add item">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      <span>Add item</span>
+    <button class="nav-btn" onclick="switchTab('history',this)" aria-label="History">
+      <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="9" x2="22" y2="9"/><line x1="7" y1="4" x2="7" y2="9"/></svg>
+      <span>History</span>
     </button>
     <button class="nav-btn" onclick="switchTab('spending',this)" aria-label="Spending">
       <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 1 0 0 7h5a3.5 3.5 0 1 0 0 7H6"/></svg>
-      <span>Spending</span>
+      <span>Spend</span>
+    </button>
+    <button class="nav-btn" onclick="switchTab('add',this)" aria-label="Add item">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <span>Add</span>
     </button>
   </nav>
 </div>
@@ -478,6 +494,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 const STORAGE_KEY = 'pokevault_v1'; // legacy — kept for migration only
 let items = [];
 let currentFilter = 'all';
+let vaultSort = 'value';
 let pricesFetching = false;
 
 function updateBadge() {
@@ -615,16 +632,24 @@ function switchTab(id, btn) {
   document.getElementById('tab-' + id).classList.add('active');
   if (btn) btn.classList.add('active');
   if (id === 'dashboard') renderDashboard();
-  if (id === 'collection') renderCollection();
+  if (id === 'collection') renderVault();
+  if (id === 'history') renderHistory();
   if (id === 'spending') renderSpending();
   document.querySelector('.main').scrollTop = 0;
+}
+
+function setVaultSort(sort, btn) {
+  vaultSort = sort;
+  document.querySelectorAll('#vault-sort-row .btn-sm').forEach(b => b.classList.remove('active-filter'));
+  btn.classList.add('active-filter');
+  renderVault();
 }
 
 function setFilter(f, btn) {
   currentFilter = f;
   document.querySelectorAll('#filter-row .btn-sm').forEach(b => b.classList.remove('active-filter'));
   btn.classList.add('active-filter');
-  renderCollection();
+  renderHistory();
 }
 
 function autoStatus() {
@@ -738,7 +763,7 @@ function editItem(id) {
   searchEl._manuallyEdited = true;
   document.getElementById('form-title').textContent = 'Edit item';
   document.getElementById('save-btn').textContent = 'Save changes';
-  switchTab('add', document.querySelector('.nav-btn:nth-child(3)'));
+  switchTab('add', document.querySelector('.nav-btn:nth-child(5)'));
   document.querySelector('.main').scrollTop = 0;
 }
 
@@ -746,7 +771,7 @@ function deleteItem(id) {
   if (!confirm('Remove this item from your vault?')) return;
   items = items.filter(i => i.id !== id);
   save();
-  renderCollection();
+  renderHistory();
   toast('Removed');
 }
 
@@ -769,7 +794,7 @@ function duplicateItem(id) {
   searchEl._manuallyEdited = true;
   document.getElementById('form-title').textContent = 'Add item (from template)';
   document.getElementById('save-btn').textContent = 'Add to collection';
-  switchTab('add', document.querySelector('.nav-btn:nth-child(3)'));
+  switchTab('add', document.querySelector('.nav-btn:nth-child(5)'));
   document.querySelector('.main').scrollTop = 0;
   toast('Template loaded — change what\'s different then save');
 }
@@ -785,7 +810,7 @@ function splitOpen(id) {
     if (!confirm(`That's all ${item.qty} — mark the whole entry as opened?`)) return;
     item.status = 'ripped';
     save();
-    renderCollection();
+    renderHistory();
     toast('All marked as opened');
     setTimeout(() => openRipModal(id), 400);
     return;
@@ -802,7 +827,7 @@ function splitOpen(id) {
   };
   items.unshift(openedEntry);
   save();
-  renderCollection();
+  renderHistory();
   toast(`Split: ${item.qty} sealed + ${openCount} opened`);
   setTimeout(() => openRipModal(openedEntry.id), 400);
 }
@@ -813,7 +838,7 @@ function markOpened(id) {
   if (!confirm('Mark "' + item.name + '" as opened/ripped?')) return;
   item.status = 'ripped';
   save();
-  renderCollection();
+  renderHistory();
   toast('Marked as opened');
   setTimeout(() => openRipModal(id), 400);
 }
@@ -861,7 +886,7 @@ function saveEdit() {
   if (newVal !== '') { item.currentValue = parseFloat(newVal); item.lastPriceFetch = new Date().toISOString().split('T')[0]; }
   save();
   document.getElementById('edit-modal').classList.remove('open');
-  renderCollection();
+  renderHistory();
   toast('✅ Saved');
 }
 
@@ -1043,8 +1068,80 @@ function renderDashboard() {
   }
 }
 
-// Collection
-function renderCollection() {
+// Collection — aggregated view grouped by item name
+function renderVault() {
+  const el = document.getElementById('vault-list');
+  if (!items.length) {
+    el.innerHTML = '<div class="empty"><span class="empty-icon">📦</span><div class="empty-title">No items yet</div><div class="empty-desc">Add items via the + tab</div></div>';
+    return;
+  }
+
+  // Group by name (case-insensitive)
+  const groups = {};
+  items.forEach(i => {
+    const key = i.name.toLowerCase();
+    if (!groups[key]) groups[key] = { name: i.name, type: i.type, set: i.set, entries: [] };
+    groups[key].entries.push(i);
+  });
+
+  // Calculate stats per group
+  let grouped = Object.values(groups).map(g => {
+    const totalQty = g.entries.reduce((a,i) => a + i.qty, 0);
+    const totalPaid = g.entries.reduce((a,i) => a + i.price * i.qty, 0);
+    const totalValue = g.entries.reduce((a,i) => {
+      if (i.status === 'ripped') return a; // sunk cost
+      return a + (i.currentValue !== null ? i.currentValue * i.qty : i.price * i.qty);
+    }, 0);
+    const gain = totalValue - totalPaid;
+    const statusCounts = {};
+    g.entries.forEach(i => { statusCounts[i.status] = (statusCounts[i.status] || 0) + i.qty; });
+    const hasPrice = g.entries.some(i => i.currentValue !== null && i.status !== 'ripped');
+    return { ...g, totalQty, totalPaid, totalValue, gain, statusCounts, hasPrice };
+  });
+
+  // Sort
+  if (vaultSort === 'value') grouped.sort((a,b) => b.totalValue - a.totalValue);
+  else if (vaultSort === 'gain') grouped.sort((a,b) => b.gain - a.gain);
+  else if (vaultSort === 'type') grouped.sort((a,b) => a.type.localeCompare(b.type));
+  else if (vaultSort === 'set') grouped.sort((a,b) => (a.set||'zzz').localeCompare(b.set||'zzz'));
+  else grouped.sort((a,b) => a.name.localeCompare(b.name));
+
+  const STATUS_LABELS_SHORT = {sealed:'sealed',ripped:'opened',single:'single',graded:'graded'};
+
+  el.innerHTML = grouped.map(g => {
+    const gainColor = g.gain >= 0 ? 'var(--green)' : 'var(--red)';
+    const statusParts = Object.entries(g.statusCounts)
+      .map(([s,n]) => `${n} ${STATUS_LABELS_SHORT[s]||s}`)
+      .join(' · ');
+    const b = TYPE_BADGE[g.type] || {label:'SLD', color:'var(--teal)'};
+    return `<div class="item-row" style="cursor:default">
+      <div style="width:40px;height:40px;border-radius:10px;background:${b.color}22;border:1px solid ${b.color}44;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:10px;font-weight:800;color:${b.color};letter-spacing:0.5px">${b.label}</div>
+      <div class="item-body">
+        <div class="item-name">${g.name}</div>
+        <div class="item-meta">${g.set ? g.set + ' · ' : ''}${statusParts}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;align-items:baseline">
+          <div>
+            <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Paid</div>
+            <div style="font-size:14px;font-weight:600">${aud(g.totalPaid)}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Value</div>
+            <div style="font-size:14px;font-weight:600;color:var(--accent2)">${aud(g.totalValue)}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;color:var(--text3);margin-bottom:2px">Gain/Loss</div>
+            <div style="font-size:14px;font-weight:700;color:${gainColor}">${g.gain>=0?'+':''}${aud(g.gain)}</div>
+          </div>
+        </div>
+        ${!g.hasPrice ? '<div style="font-size:10px;color:var(--text3);margin-top:4px">Tap $ on history items to set values</div>' : ''}
+      </div>
+      <div style="font-size:20px;font-weight:700;color:var(--text3);flex-shrink:0;align-self:flex-start;padding-top:4px">×${g.totalQty}</div>
+    </div>`;
+  }).join('');
+}
+
+// History (purchase log)
+function renderHistory() {
   const filtered = currentFilter === 'all' ? items : items.filter(i => i.status === currentFilter);
   const sorted = [...filtered].sort((a,b) => b.date.localeCompare(a.date));
   const el = document.getElementById('collection-list');
@@ -1199,7 +1296,7 @@ async function refreshSingleItem(id) {
     item.priceFallback = result.fallback;
     item.priceCount = result.count;
     save();
-    renderCollection();
+    renderHistory();
     renderDashboard();
     toast('✅ Updated: ' + aud(result.price));
   } else {
@@ -1239,7 +1336,8 @@ async function refreshAllPrices() {
   if (activeSection) {
     const id = activeSection.id.replace('tab-','');
     if (id === 'dashboard') renderDashboard();
-    if (id === 'collection') renderCollection();
+    if (id === 'collection') renderVault();
+    if (id === 'history') renderHistory();
     if (id === 'spending') renderSpending();
   }
 }
@@ -1294,7 +1392,7 @@ function savePriceModal() {
   save();
   document.getElementById('price-modal').classList.remove('open');
   priceModalItemId = null;
-  renderCollection();
+  renderHistory();
   renderDashboard();
   const msg = matches.length > 1
     ? `✅ Updated ${matches.length} items: ${aud(val)}`
@@ -1366,7 +1464,7 @@ function closeRipModal(skip) {
       const pullNote = 'Pulls: ' + ripPulls.join(', ');
       item.notes = item.notes ? item.notes + ' | ' + pullNote : pullNote;
       save();
-      renderCollection();
+      renderHistory();
       toast('✅ Pulls saved to notes');
     }
   }
