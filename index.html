@@ -475,12 +475,26 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
           <option value="graded">Graded</option>
         </select>
       </div>
-      <div class="field"><label>Where purchased</label><input type="text" id="m-source"></div>
+      <div class="field">
+        <label>Item type</label>
+        <select id="m-type">
+          <option value="sealed-box">Booster Box</option>
+          <option value="sealed-etb">Elite Trainer Box (ETB)</option>
+          <option value="sealed-bundle">Booster Bundle</option>
+          <option value="sealed-pack">Booster/Blister Pack(s)</option>
+          <option value="sealed-promo">Promo / Special Set</option>
+          <option value="sealed-other">Other Sealed</option>
+          <option value="single">Single Card</option>
+          <option value="graded">Graded Card</option>
+          <option value="ripped">Opened Product</option>
+        </select>
+      </div>
     </div>
     <div class="field-row">
+      <div class="field"><label>Where purchased</label><input type="text" id="m-source"></div>
       <div class="field"><label>Grade / condition</label><input type="text" id="m-grade"></div>
-      <div class="field"><label>Current value (AUD)</label><input type="number" id="m-value" step="0.01" inputmode="decimal" placeholder="Leave blank to keep existing"></div>
     </div>
+      <div class="field"><label>Current value (AUD)</label><input type="number" id="m-value" step="0.01" inputmode="decimal" placeholder="Leave blank to keep existing"></div>
     <div class="field"><label>eBay search term</label><input type="text" id="m-search"></div>
     <div class="field"><label>Notes</label><textarea id="m-notes" rows="2"></textarea></div>
     <input type="hidden" id="m-id">
@@ -854,6 +868,7 @@ function openEditModal(id) {
   document.getElementById('m-price').value = item.price;
   document.getElementById('m-qty').value = item.qty;
   document.getElementById('m-status').value = item.status;
+  document.getElementById('m-type').value = item.type || 'sealed-other';
   document.getElementById('m-source').value = item.source || '';
   document.getElementById('m-grade').value = item.grade || '';
   document.getElementById('m-value').value = item.currentValue !== null ? item.currentValue : '';
@@ -878,6 +893,7 @@ function saveEdit() {
   item.price = parseFloat(document.getElementById('m-price').value) || item.price;
   item.qty = parseInt(document.getElementById('m-qty').value) || item.qty;
   item.status = document.getElementById('m-status').value;
+  item.type = document.getElementById('m-type').value;
   item.source = document.getElementById('m-source').value.trim();
   item.grade = document.getElementById('m-grade').value.trim();
   item.searchTerm = document.getElementById('m-search').value.trim();
